@@ -1,0 +1,1 @@
+{"LightGBM": {"learning_rate": 0.05, "max_depth": 5, "n_estimators": 400, "num_leaves": 15}, "GradBoost": {"learning_rate": 0.03, "max_depth": 4, "n_estimators": 300, "subsample": 0.7}, "Ridge": {"m__alpha": 10.0}}

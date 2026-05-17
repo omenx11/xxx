@@ -1,0 +1,111 @@
+﻿dropped,kept,r,reason
+Y477110364_lag2,Y477110364_lag1,1.0,duplicate column
+Y477110125_lag2,Y477110125_lag1,1.0,duplicate column
+Y477110119_lag2,Y477110119_lag1,1.0,duplicate column
+Y477110116_lag2,Y477110116_lag1,1.0,duplicate column
+Y477110121_lag2,Y477110121_lag1,1.0,duplicate column
+Y477110038_lag2,Y477110038_lag1,1.0,duplicate column
+Y477110037_lag2,Y477110037_lag1,1.0,duplicate column
+Y477110036_lag2,Y477110036_lag1,1.0,duplicate column
+Y477110035_lag2,Y477110035_lag1,1.0,duplicate column
+Y477100023_lag2,Y477100023_lag1,0.9997,high_corr |r|=1.000; kept by higher importance/target-corr
+real_log_lag2,real_log_roll3_mean,0.9994,high_corr |r|=0.999; kept by higher importance/target-corr
+nom_log_lag2,nom_log_roll3_mean,0.9988,high_corr |r|=0.999; kept by higher importance/target-corr
+Y477140022_yoy_lag1,Y477110108_yoy_lag1,0.9987,high_corr |r|=0.999; kept by higher importance/target-corr
+real_log_roll3_mean,real_log_lag1,0.9979,high_corr |r|=0.998; kept by higher importance/target-corr
+Y477110378_lag2,Y477110378_lag1,0.9973,high_corr |r|=0.997; kept by higher importance/target-corr
+nom_log_lag3,nom_log_roll3_mean,0.9972,high_corr |r|=0.997; kept by higher importance/target-corr
+nom_log_roll3_mean,nom_log_lag1,0.997,high_corr |r|=0.997; kept by higher importance/target-corr
+Y477110301_lag1,Y477110301_lag2,0.9969,high_corr |r|=0.997; kept by higher importance/target-corr
+Y477110005_lag2,Y477110005_lag1,0.9959,high_corr |r|=0.996; kept by higher importance/target-corr
+nom_growth1,Y477110005_yoy_lag1,0.9956,high_corr |r|=0.996; kept by higher importance/target-corr
+Y477110374_lag2,Y477110374_lag1,0.995,high_corr |r|=0.995; kept by higher importance/target-corr
+real_log_lag3,real_log_lag1,0.992,high_corr |r|=0.992; kept by higher importance/target-corr
+Y477110071_lag2,Y477110071_lag1,0.9901,high_corr |r|=0.990; kept by higher importance/target-corr
+Y477110213_lag2,Y477110213_lag1,0.9893,high_corr |r|=0.989; kept by higher importance/target-corr
+Y477110341_lag1,Y477110341_lag2,0.9888,high_corr |r|=0.989; kept by higher importance/target-corr
+Y477140029_lag2,Y477140029_lag1,0.9879,high_corr |r|=0.988; kept by higher importance/target-corr
+Y477140022_lag2,Y477140022_lag1,0.9854,high_corr |r|=0.985; kept by higher importance/target-corr
+Y477140004_lag2,Y477140004_lag1,0.9843,high_corr |r|=0.984; kept by higher importance/target-corr
+Y477110071_lag1,Y477110005_lag1,0.9843,high_corr |r|=0.984; kept by higher importance/target-corr
+Y477100014_yoy_lag1,Y477100008_yoy_lag1,0.982,high_corr |r|=0.982; kept by higher importance/target-corr
+Y477110190_lag2,Y477110190_lag1,0.9764,high_corr |r|=0.976; kept by higher importance/target-corr
+Y477110374_lag1,Y477110378_lag1,0.969,high_corr |r|=0.969; kept by higher importance/target-corr
+Y477100008_lag2,Y477100008_lag1,0.9659,high_corr |r|=0.966; kept by higher importance/target-corr
+Y477100010_lag1,Y477100010_lag2,0.9594,high_corr |r|=0.959; kept by higher importance/target-corr
+Y477110108_lag2,Y477110108_lag1,0.9423,high_corr |r|=0.942; kept by higher importance/target-corr
+nom_log_vs_median_lag1,real_log_lag1,0.9411,high_corr |r|=0.941; kept by higher importance/target-corr
+Y477100014_lag2,Y477100014_lag1,0.9411,high_corr |r|=0.941; kept by higher importance/target-corr
+eur_rub_avg_lag1,usd_rub_avg_lag1,0.9358,high_corr |r|=0.936; kept by higher importance/target-corr
+Y477100012_lag2,Y477100012_lag1,0.9342,high_corr |r|=0.934; kept by higher importance/target-corr
+Y477110037_lag1,Y477110038_lag1,0.9317,high_corr |r|=0.932; kept by higher importance/target-corr
+Y477140025_lag1,Y477110108_yoy_lag1,0.9262,high_corr |r|=0.926; kept by higher importance/target-corr
+Y477140029_lag1,Y477140022_lag1,0.9251,high_corr |r|=0.925; kept by higher importance/target-corr
+Y477100012_yoy_lag1,Y477100023_yoy_lag1,0.9242,high_corr |r|=0.924; kept by higher importance/target-corr
+nom_log_roll3_std,,,not in top-22 by gain+permutation
+nom_growth3,,,not in top-22 by gain+permutation
+real_log_roll3_std,,,not in top-22 by gain+permutation
+real_growth1,,,not in top-22 by gain+permutation
+real_growth3,,,not in top-22 by gain+permutation
+Y477110108_yoy_lag1,,,not in top-22 by gain+permutation
+Y477140025_lag2,,,not in top-22 by gain+permutation
+Y477140025_yoy_lag1,,,not in top-22 by gain+permutation
+Y477100008_lag1,,,not in top-22 by gain+permutation
+Y477100008_yoy_lag1,,,not in top-22 by gain+permutation
+Y477100010_lag2,,,not in top-22 by gain+permutation
+Y477100010_yoy_lag1,,,not in top-22 by gain+permutation
+Y477100012_lag1,,,not in top-22 by gain+permutation
+Y477100023_lag1,,,not in top-22 by gain+permutation
+Y477100023_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110364_lag1,,,not in top-22 by gain+permutation
+Y477110364_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110125_lag1,,,not in top-22 by gain+permutation
+Y477110125_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110119_lag1,,,not in top-22 by gain+permutation
+Y477110119_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110116_lag1,,,not in top-22 by gain+permutation
+Y477110116_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110121_lag1,,,not in top-22 by gain+permutation
+Y477110121_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110341_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110128_lag1,,,not in top-22 by gain+permutation
+Y477110128_lag2,,,not in top-22 by gain+permutation
+Y477110128_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110038_lag1,,,not in top-22 by gain+permutation
+Y477110038_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110037_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110036_lag1,,,not in top-22 by gain+permutation
+Y477110036_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110035_lag1,,,not in top-22 by gain+permutation
+Y477110035_yoy_lag1,,,not in top-22 by gain+permutation
+Y477140029_yoy_lag1,,,not in top-22 by gain+permutation
+Y477140004_lag1,,,not in top-22 by gain+permutation
+Y477140004_yoy_lag1,,,not in top-22 by gain+permutation
+Y477140001_lag1,,,not in top-22 by gain+permutation
+Y477140001_lag2,,,not in top-22 by gain+permutation
+Y477140001_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110213_lag1,,,not in top-22 by gain+permutation
+Y477110213_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110197_lag1,,,not in top-22 by gain+permutation
+Y477110197_lag2,,,not in top-22 by gain+permutation
+Y477110197_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110190_lag1,,,not in top-22 by gain+permutation
+Y477110190_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110301_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110111_lag1,,,not in top-22 by gain+permutation
+Y477110111_lag2,,,not in top-22 by gain+permutation
+Y477110111_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110131_lag1,,,not in top-22 by gain+permutation
+Y477110131_lag2,,,not in top-22 by gain+permutation
+Y477110131_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110071_yoy_lag1,,,not in top-22 by gain+permutation
+Y477110005_lag1,,,not in top-22 by gain+permutation
+Y477110005_yoy_lag1,,,not in top-22 by gain+permutation
+fo_Дальневосточный ФО,,,not in top-22 by gain+permutation
+fo_Приволжский ФО,,,not in top-22 by gain+permutation
+fo_Прочее,,,not in top-22 by gain+permutation
+fo_Северо-Западный ФО,,,not in top-22 by gain+permutation
+fo_Сибирский ФО,,,not in top-22 by gain+permutation
+fo_Уральский ФО,,,not in top-22 by gain+permutation
+fo_Центральный ФО,,,not in top-22 by gain+permutation
+fo_Южный ФО,,,not in top-22 by gain+permutation
