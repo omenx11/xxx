@@ -1,0 +1,9 @@
+{
+  "chosen_scenario_model": "RandomForest",
+  "best_nominal_model": "CAGR",
+  "best_real_model": "CAGR",
+  "best_ml_nominal_model": "RandomForest",
+  "best_ml_real_model": "RandomForest",
+  "n_regions": 85,
+  "test_years": "2020-2023"
+}
