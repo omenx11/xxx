@@ -1,16 +1,16 @@
-"""scripts/run_pipeline.py — единственная команда для запуска всего ВКР-пайплайна.
+"""scripts/run_pipeline.py — единая команда для запуска всего ВКР-пайплайна.
 
 Запускает по очереди:
-  1. preprocess        →  panel_preprocessed.parquet
-  2. feature engineer  →  panel_features.parquet
-  3. feature selection →  selected_features.csv, vif_check.csv
-  4. grid search       →  grid_search_results.csv (TimeSeriesSplit)
-  5. walk-forward CV   →  model_summary.csv, per_year_metrics.csv,
-                            oof_predictions.csv (nominal + real targets)
-  6. train final       →  models/<name>.pkl
-  7. SHAP-анализ       →  shap_*.csv
-  8. forecast 1–5 лет, 3 сценария →  forecast_all_scenarios.csv
-  9. визуализация      →  reports/figures/*.png + reports/maps/*.html
+  1. preprocess        → panel_preprocessed.parquet
+  2. feature engineer  → panel_features.parquet
+  3. feature selection → selected_features.csv, vif_check.csv
+  4. grid search       → grid_search_results.csv (TimeSeriesSplit)
+  5. walk-forward CV   → model_summary.csv, per_year_metrics.csv,
+                         oof_predictions.csv (nominal + real targets)
+  6. train final       → models/<name>_nominal.pkl и models/<name>_real.pkl
+  7. SHAP-анализ       → shap_*.csv
+  8. forecast 1–5 лет, 3 сценария → forecast_all_scenarios.csv
+  9. визуализация      → reports/figures/*.png + reports/maps/*.html
 """
 from __future__ import annotations
 import argparse
@@ -26,7 +26,6 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 import pandas as pd
 
-# Перенаправляем stdout в UTF-8 на Windows
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -35,14 +34,12 @@ except Exception:
 
 from src_vkr.config import (
     DATA_PROC, RESULTS, MODELS, TARGET_NOM, GRP_REAL_PC, MACRO_COLS,
-    TRAIN_END, TEST_START, TEST_END,
+    TEST_START, TEST_END,
 )
 from src_vkr.preprocess import run_preprocess
 from src_vkr.features import build_features, get_candidate_features, write_leak_audit
 from src_vkr.selection import select_features
-from src_vkr.models import (
-    make_specs, run_all_models, train_final, ModelSpec,
-)
+from src_vkr.models import make_specs, run_all_models, train_final, ModelSpec
 from src_vkr.grid import grid_search_all, _build_model
 from src_vkr.shap_analysis import run_shap
 from src_vkr.forecast import all_scenarios_forecast, compute_log_residuals
@@ -53,6 +50,9 @@ from src_vkr.viz import (
     fig_shap_summary, fig_region_dynamics, fig_scenario_forecast,
     make_all_maps,
 )
+
+BASELINE_MODELS = {"Naive", "CAGR", "MeanGrowth", "ARIMA"}
+FINAL_MODEL_NAMES = ["LightGBM", "XGBoost", "GradientBoosting", "RandomForest", "Ridge", "ElasticNet"]
 
 
 def banner(text: str):
@@ -95,39 +95,45 @@ def step5_walkforward():
     banner("WALK-FORWARD CV: NOMINAL GRP/CAPITA")
     oof_n, sum_n, py_n = run_all_models(df, feats, target_raw=TARGET_NOM)
     sum_n.index.name = "model"
-    sum_n.to_csv(RESULTS / "model_summary_nominal.csv",
-                  encoding="utf-8-sig", index_label="model")
+    sum_n.to_csv(RESULTS / "model_summary_nominal.csv", encoding="utf-8-sig", index_label="model")
     py_n["target"] = "nominal"
     oof_n["target"] = "nominal"
 
     banner("WALK-FORWARD CV: REAL GRP/CAPITA (PRICES 2015)")
     oof_r, sum_r, py_r = run_all_models(df, feats, target_raw=GRP_REAL_PC)
     sum_r.index.name = "model"
-    sum_r.to_csv(RESULTS / "model_summary_real.csv",
-                  encoding="utf-8-sig", index_label="model")
+    sum_r.to_csv(RESULTS / "model_summary_real.csv", encoding="utf-8-sig", index_label="model")
     py_r["target"] = "real"
     oof_r["target"] = "real"
 
-    # Объединённые таблицы (для удобства)
     oof_all = pd.concat([oof_n, oof_r], ignore_index=True)
     py_all = pd.concat([py_n, py_r], ignore_index=True)
     oof_all.to_csv(RESULTS / "oof_predictions.csv", index=False, encoding="utf-8-sig")
     py_all.to_csv(RESULTS / "per_year_metrics.csv", index=False, encoding="utf-8-sig")
 
-    # Главная сводка (по nominal — основной таргет)
-    sum_n.round(4).to_csv(RESULTS / "model_summary.csv",
-                            encoding="utf-8-sig", index_label="model")
+    # Главная сводка для ВКР: номинальный таргет как основной.
+    sum_n.round(4).to_csv(RESULTS / "model_summary.csv", encoding="utf-8-sig", index_label="model")
 
     print("\n  Лучшие модели по RMSLE (nominal):")
-    print(sum_n.head(5).round(4).to_string())
+    print(sum_n.head(7).round(4).to_string())
     return oof_all, sum_n, sum_r, py_all
 
 
+def _spec_with_grid(name: str, best: dict, default_specs: dict[str, ModelSpec]) -> ModelSpec:
+    if name in best and best[name]:
+        params = best[name]
+
+        def _factory(n=name, p=params):
+            return _build_model(n, p)
+        return ModelSpec(name, _factory)
+    return default_specs[name]
+
+
 def step6_train_final():
+    """Обучает финальные ML-бандлы отдельно для номинального и реального ВРП."""
     df = pd.read_parquet(DATA_PROC / "panel_features.parquet")
     feats = pd.read_csv(DATA_PROC / "selected_features.csv")["feature"].tolist()
 
-    # Загрузка лучших гиперпараметров (если был запущен grid)
     best_path = RESULTS / "grid_best.json"
     if best_path.exists():
         with open(best_path, encoding="utf-8") as f:
@@ -135,29 +141,19 @@ def step6_train_final():
     else:
         best = {}
 
-    # Финальные модели на nominal
-    from src_vkr.models import make_specs, ModelSpec
     default_specs = {s.name: s for s in make_specs()}
     saved = []
-    for name in ["LightGBM", "XGBoost", "GradientBoosting", "RandomForest",
-                  "Ridge", "ElasticNet"]:
+    for name in FINAL_MODEL_NAMES:
         if name not in default_specs:
             continue
-        if name in best and best[name]:
-            params = best[name]
-            def _factory(n=name, p=params):
-                return _build_model(n, p)
-            spec = ModelSpec(name, _factory)
-        else:
-            spec = default_specs[name]
-
-        bundle = train_final(df, feats, spec, target_raw=TARGET_NOM,
-                              train_through=TEST_END)
-        path = MODELS / f"{name.lower()}.pkl"
-        with open(path, "wb") as f:
-            pickle.dump(bundle, f)
-        saved.append(name)
-        print(f"  [OK] {name} → {path}")
+        spec = _spec_with_grid(name, best, default_specs)
+        for target_label, target_raw in [("nominal", TARGET_NOM), ("real", GRP_REAL_PC)]:
+            bundle = train_final(df, feats, spec, target_raw=target_raw, train_through=TEST_END)
+            path = MODELS / f"{name.lower()}_{target_label}.pkl"
+            with open(path, "wb") as f:
+                pickle.dump(bundle, f)
+            saved.append(path.name)
+            print(f"  [OK] {name} / {target_label} → {path}")
     return saved
 
 
@@ -167,32 +163,41 @@ def step7_shap():
     return run_shap(df, feats, target_log="nom_log")
 
 
-def step8_forecast(forecast_model: str = "GradientBoosting"):
+def _best_ml_name(summary: pd.DataFrame) -> str:
+    ml_models = [m for m in summary.index if m not in BASELINE_MODELS]
+    return ml_models[0] if ml_models else summary.index[0]
+
+
+def step8_forecast(forecast_model: str | None = None):
     df = pd.read_parquet(DATA_PROC / "panel_features.parquet")
-    # Берём лучший по RMSLE среди ML-моделей для CI (из OOF)
     oof = pd.read_csv(RESULTS / "oof_predictions.csv")
     oof_n = oof[oof["target"] == "nominal"]
     summary = pd.read_csv(RESULTS / "model_summary.csv", index_col="model")
-    ml_models = [m for m in summary.index
-                  if m not in ("Naive", "MeanGrowth")]
-    best_ml = ml_models[0] if ml_models else summary.index[0]
+    best_ml = forecast_model or _best_ml_name(summary)
     print(f"  CI считаются по OOF лучшей ML: {best_ml}")
     log_resid = compute_log_residuals(oof_n[oof_n["model"] == best_ml])
 
-    # Загрузка модели для прогноза
-    bundle_path = MODELS / f"{forecast_model.lower()}.pkl"
-    if not bundle_path.exists():
-        # fallback: лучший доступный
-        for cand in ["gradientboosting.pkl", "lightgbm.pkl", "xgboost.pkl",
-                      "randomforest.pkl"]:
+    nom_path = MODELS / f"{best_ml.lower()}_nominal.pkl"
+    real_path = MODELS / f"{best_ml.lower()}_real.pkl"
+    if not nom_path.exists():
+        for cand in ["gradientboosting_nominal.pkl", "lightgbm_nominal.pkl", "xgboost_nominal.pkl", "randomforest_nominal.pkl"]:
             if (MODELS / cand).exists():
-                bundle_path = MODELS / cand
+                nom_path = MODELS / cand
                 break
-    with open(bundle_path, "rb") as f:
-        bundle = pickle.load(f)
-    print(f"  Прогноз делает: {bundle['name']}")
+    if not real_path.exists():
+        for cand in ["gradientboosting_real.pkl", "lightgbm_real.pkl", "xgboost_real.pkl", "randomforest_real.pkl"]:
+            if (MODELS / cand).exists():
+                real_path = MODELS / cand
+                break
 
-    fc = all_scenarios_forecast(df, bundle, log_resid=log_resid)
+    with open(nom_path, "rb") as f:
+        nominal_bundle = pickle.load(f)
+    with open(real_path, "rb") as f:
+        real_bundle = pickle.load(f)
+    print(f"  Прогноз nominal делает: {nominal_bundle['name']}")
+    print(f"  Прогноз real делает:    {real_bundle['name']}")
+
+    fc = all_scenarios_forecast(df, nominal_bundle, real_bundle=real_bundle, log_resid=log_resid)
     np.save(RESULTS / "log_residuals.npy", log_resid)
     return fc
 
@@ -214,17 +219,15 @@ def step9_visualize():
     fig_correlation_heatmap(df, feats, max_feat=18)
     fig_corr_with_target(df, feats)
     fig_model_comparison(summary)
-    ml = [m for m in summary.index if m not in ("Naive", "MeanGrowth", "MLP")]
-    best_ml = ml[0] if ml else summary.index[0]
+    best_ml = _best_ml_name(summary)
     fig_actual_vs_predicted(oof[oof["target"] == "nominal"], best_ml)
     fig_mape_by_year(py[py["target"] == "nominal"])
     fig_shap_summary(shap_g)
     fig_region_dynamics(df)
 
-    # Сценарные прогнозы для нескольких регионов
     for reg in ["Москва", "г. Москва", "Республика Татарстан",
-                 "Ханты-Мансийский автономный округ - Югра",
-                 "Республика Дагестан", "Свердловская область"]:
+                "Ханты-Мансийский автономный округ - Югра",
+                "Республика Дагестан", "Свердловская область"]:
         if (df["object_name"] == reg).any():
             fig_scenario_forecast(df, fc_all, reg, target="nominal")
             fig_scenario_forecast(df, fc_all, reg, target="real")
