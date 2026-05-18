@@ -1,36 +1,33 @@
 """models.py — реестр моделей и walk-forward кросс-валидация.
 
-Группы моделей (для отчёта главы ВКР «Сравнение классических и современных
-методов прогнозирования»):
+В проекте используются три группы подходов:
 
-Базовые (бенчмарки):
-  - Naive          — ŷ_t = y_{t-1};
-  - MeanGrowth     — ŷ_t = y_{t-1} * (1 + средний YoY региона);
+Базовые и классические временные бенчмарки:
+  - Naive       — ŷ_t = y_{t-1};
+  - CAGR        — среднегодовой темп роста региона за исторический период;
+  - MeanGrowth  — средний годовой прирост региона;
+  - ARIMA       — одномерная ARIMA(1, 1, 0) по каждому региону.
 
-Эконометрика / Регуляризованные регрессии:
-  - LinearRegression;
+Регуляризованные линейные модели:
   - Ridge;
   - Lasso;
-  - ElasticNet;
+  - ElasticNet.
 
-Деревья и ансамбли:
+Ансамблевые ML-модели:
   - RandomForest;
-  - GradientBoosting (sklearn);
+  - GradientBoosting;
   - XGBoost;
   - LightGBM;
-  - CatBoost.
+  - CatBoost, если установлен.
 
-Нейросеть:
-  - MLP (MLPRegressor от sklearn).
-
-Прогноз обучается на log(target) — стандартный приём для скошённых
-распределений; обратное преобразование делается через expm1.
+MLPRegressor намеренно исключён из реестра: на коротких региональных временных
+рядах 2001–2023 он нестабилен и ухудшает качество по сравнению с простыми
+инерционными и ансамблевыми моделями.
 
 Walk-forward CV:
   для каждого test_year ∈ [TEST_START, TEST_END]:
       train  : year ≤ test_year - 1
       test   : year == test_year
-  Это честный out-of-sample protocol для панельных данных.
 """
 from __future__ import annotations
 import warnings
@@ -39,11 +36,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import (
-    LinearRegression, Ridge, Lasso, ElasticNet,
-)
+from sklearn.linear_model import Ridge, Lasso, ElasticNet
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 import xgboost as xgb
@@ -56,17 +50,17 @@ except ImportError:
 
 from .config import (
     RANDOM_STATE, SKLEARN_N_JOBS, TARGET_NOM, GRP_REAL_PC,
-    TRAIN_END, TEST_START, TEST_END,
+    TEST_START, TEST_END,
 )
 from .metrics import all_metrics
 
 warnings.filterwarnings("ignore")
 
 
-# ─── 1. Baseline modelы ─────────────────────────────────────────────────────
+# ─── 1. Baseline-модели ─────────────────────────────────────────────────────
 
 class NaiveBaseline:
-    """ŷ_t = y_{t-1}. Идеально для инерционных рядов."""
+    """ŷ_t = y_{t-1}. Сильный инерционный бенчмарк для ВРП."""
     name = "Naive"
 
     def fit(self, df_train, target_col):
@@ -77,37 +71,126 @@ class NaiveBaseline:
         return df_test[f"{self.target_col}_lag1_raw"].values
 
 
+class CAGRBaseline:
+    """ŷ_t = y_{t-1} * (1 + CAGR_region).
+
+    CAGR считается по первому и последнему доступному значению региона в train:
+        CAGR = (y_last / y_first) ** (1 / n_years) - 1.
+    Если для региона не хватает истории, используется глобальный CAGR.
+    """
+    name = "CAGR"
+
+    def fit(self, df_train, target_col):
+        self.target_col = target_col
+        self.region_growth = {}
+        values_for_global = []
+
+        for region, sub in df_train.sort_values("year").groupby("object_name"):
+            s = sub[["year", target_col]].dropna()
+            s = s[s[target_col] > 0]
+            if len(s) >= 2:
+                first = float(s[target_col].iloc[0])
+                last = float(s[target_col].iloc[-1])
+                n_years = int(s["year"].iloc[-1] - s["year"].iloc[0])
+                if first > 0 and last > 0 and n_years > 0:
+                    g = (last / first) ** (1.0 / n_years) - 1.0
+                    g = float(np.clip(g, -0.50, 1.00))
+                    self.region_growth[region] = g
+                    values_for_global.append(g)
+
+        self.global_growth = float(np.nanmedian(values_for_global)) if values_for_global else 0.0
+        return self
+
+    def predict(self, df_test):
+        g = df_test["object_name"].map(self.region_growth).fillna(self.global_growth)
+        return df_test[f"{self.target_col}_lag1_raw"].values * (1.0 + g.values)
+
+
 class MeanGrowthBaseline:
     """ŷ_t = y_{t-1} * (1 + средний YoY региона на train)."""
     name = "MeanGrowth"
 
     def fit(self, df_train, target_col):
         self.target_col = target_col
-        # YoY по target в долях
         df_train = df_train.copy()
-        df_train["_yoy"] = (
-            df_train.groupby("object_name")[target_col].pct_change()
-        )
+        df_train["_yoy"] = df_train.groupby("object_name")[target_col].pct_change()
         self.region_growth = (
             df_train.groupby("object_name")["_yoy"]
             .mean()
-            .fillna(df_train["_yoy"].mean())
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(df_train["_yoy"].replace([np.inf, -np.inf], np.nan).mean())
             .to_dict()
         )
-        self.global_growth = float(df_train["_yoy"].mean())
+        self.global_growth = float(df_train["_yoy"].replace([np.inf, -np.inf], np.nan).mean())
+        if not np.isfinite(self.global_growth):
+            self.global_growth = 0.0
         return self
 
     def predict(self, df_test):
         g = df_test["object_name"].map(self.region_growth).fillna(self.global_growth)
-        return df_test[f"{self.target_col}_lag1_raw"].values * (1 + g.values)
+        return df_test[f"{self.target_col}_lag1_raw"].values * (1.0 + g.values)
 
 
-# ─── 2. Реестр ML-моделей (log-target) ──────────────────────────────────────
+class ARIMABaseline:
+    """Региональная ARIMA(1, 1, 0) на log1p(target).
+
+    Модель обучается отдельно для каждого региона на доступной истории train и
+    даёт одношаговый прогноз. При недостатке наблюдений или ошибке сходимости
+    выполняется fallback на последнее известное значение.
+    """
+    name = "ARIMA"
+
+    def __init__(self, order: tuple[int, int, int] = (1, 1, 0), min_obs: int = 8):
+        self.order = order
+        self.min_obs = min_obs
+
+    def fit(self, df_train, target_col):
+        self.target_col = target_col
+        self.history = {}
+        for region, sub in df_train.sort_values("year").groupby("object_name"):
+            s = sub[target_col].dropna().astype(float)
+            s = s[s > 0]
+            self.history[region] = np.log1p(s.values)
+        return self
+
+    def predict(self, df_test):
+        preds = []
+        try:
+            from statsmodels.tsa.arima.model import ARIMA
+        except Exception:
+            ARIMA = None
+
+        for _, row in df_test.iterrows():
+            region = row["object_name"]
+            lag1 = float(row.get(f"{self.target_col}_lag1_raw", np.nan))
+            hist = self.history.get(region, np.array([], dtype=float))
+
+            if ARIMA is None or len(hist) < self.min_obs:
+                preds.append(lag1)
+                continue
+
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model = ARIMA(hist, order=self.order, enforce_stationarity=False,
+                                  enforce_invertibility=False)
+                    fit = model.fit()
+                    pred_log = float(fit.forecast(steps=1)[0])
+                pred = float(np.expm1(pred_log))
+                if not np.isfinite(pred) or pred <= 0:
+                    pred = lag1
+            except Exception:
+                pred = lag1
+            preds.append(pred)
+        return np.asarray(preds, dtype=float)
+
+
+# ─── 2. Реестр ML-моделей ───────────────────────────────────────────────────
 
 @dataclass
 class ModelSpec:
     name: str
-    factory: callable  # function() -> sklearn-compatible regressor
+    factory: callable
 
 
 def make_specs() -> list[ModelSpec]:
@@ -116,25 +199,21 @@ def make_specs() -> list[ModelSpec]:
     def _ridge():
         return Pipeline([
             ("scaler", StandardScaler()),
-            ("model", Ridge(alpha=1.0, random_state=rs))
+            ("model", Ridge(alpha=1.0, random_state=rs)),
         ])
 
     def _lasso():
         return Pipeline([
             ("scaler", StandardScaler()),
-            ("model", Lasso(alpha=0.001, max_iter=10000, random_state=rs))
+            ("model", Lasso(alpha=0.001, max_iter=10000, random_state=rs)),
         ])
 
     def _enet():
         return Pipeline([
             ("scaler", StandardScaler()),
             ("model", ElasticNet(alpha=0.001, l1_ratio=0.5,
-                                  max_iter=10000, random_state=rs))
+                                  max_iter=10000, random_state=rs)),
         ])
-
-    def _linreg():
-        return Pipeline([("scaler", StandardScaler()),
-                         ("model", LinearRegression())])
 
     def _rf():
         return RandomForestRegressor(
@@ -163,22 +242,7 @@ def make_specs() -> list[ModelSpec]:
             random_state=rs, n_jobs=-1, verbose=-1,
         )
 
-    def _mlp():
-        # tanh лучше для коротких рядов с year_norm выходящим за train-диапазон;
-        # alpha и более мелкая сеть — для стабильности.
-        return Pipeline([
-            ("scaler", StandardScaler()),
-            ("model", MLPRegressor(
-                hidden_layer_sizes=(32, 16),
-                activation="tanh", solver="adam", alpha=1e-2,
-                learning_rate_init=0.005, max_iter=800,
-                early_stopping=True, validation_fraction=0.15,
-                n_iter_no_change=30, random_state=rs,
-            )),
-        ])
-
     specs = [
-        ModelSpec("LinearRegression", _linreg),
         ModelSpec("Ridge", _ridge),
         ModelSpec("Lasso", _lasso),
         ModelSpec("ElasticNet", _enet),
@@ -186,7 +250,6 @@ def make_specs() -> list[ModelSpec]:
         ModelSpec("GradientBoosting", _gbdt),
         ModelSpec("XGBoost", _xgb),
         ModelSpec("LightGBM", _lgb),
-        ModelSpec("MLP", _mlp),
     ]
     if HAS_CATBOOST:
         def _cat():
@@ -201,9 +264,20 @@ def make_specs() -> list[ModelSpec]:
 # ─── 3. Walk-forward CV ─────────────────────────────────────────────────────
 
 def prepare_xy(df: pd.DataFrame, features: list[str], target_log: str):
-    """Возвращает X, y (DataFrame, Series) с дропом NaN в y."""
     sub = df.dropna(subset=[target_log]).copy()
     return sub[features], sub[target_log], sub[["object_name", "year"]]
+
+
+def _make_baseline(name: str):
+    if name == "Naive":
+        return NaiveBaseline()
+    if name == "CAGR":
+        return CAGRBaseline()
+    if name == "MeanGrowth":
+        return MeanGrowthBaseline()
+    if name == "ARIMA":
+        return ARIMABaseline()
+    raise ValueError(name)
 
 
 def walk_forward_cv(df: pd.DataFrame,
@@ -213,19 +287,14 @@ def walk_forward_cv(df: pd.DataFrame,
                      test_years: tuple[int, ...] = None) -> pd.DataFrame:
     """Walk-forward CV для одной модели.
 
-    target_raw : "Y477110006" (nom) или "grp_real_pc_2015" (real)
-
-    Модель обучается на log(target). Прогноз обратно через expm1.
-    Возвращает DataFrame OOF-прогнозов с колонками
-    [object_name, year, y_true, y_pred].
-
-    spec может быть ModelSpec, либо строкой "Naive"/"MeanGrowth".
+    ML-модели обучаются на log(target), прогноз возвращается в исходной шкале.
+    Baseline-модели работают с исходной шкалой, кроме ARIMA, которая внутри
+    использует log1p для устойчивости.
     """
     if test_years is None:
         test_years = tuple(range(TEST_START, TEST_END + 1))
 
     target_log = "nom_log" if target_raw == TARGET_NOM else "real_log"
-    # Уже есть в df: target_log. Лаг для бейзлайнов:
     df = df.copy()
     df[f"{target_raw}_lag1_raw"] = df.groupby("object_name")[target_raw].shift(1)
 
@@ -240,12 +309,7 @@ def walk_forward_cv(df: pd.DataFrame,
         test = test.dropna(subset=[target_raw, f"{target_raw}_lag1_raw"])
 
         if is_baseline:
-            if spec == "Naive":
-                model = NaiveBaseline()
-            elif spec == "MeanGrowth":
-                model = MeanGrowthBaseline()
-            else:
-                raise ValueError(spec)
+            model = _make_baseline(spec)
             model.fit(train, target_raw)
             y_pred = model.predict(test)
             y_true = test[target_raw].values
@@ -263,12 +327,14 @@ def walk_forward_cv(df: pd.DataFrame,
             y_pred = np.expm1(y_log_pred)
             y_true = y_te
 
-        for r, t, yt, yp in zip(
-            test["object_name"], test["year"], y_true, y_pred
-        ):
-            oof.append({"object_name": r, "year": int(t),
-                        "y_true": float(yt), "y_pred": float(yp),
-                        "model": name})
+        for r, t, yt, yp in zip(test["object_name"], test["year"], y_true, y_pred):
+            oof.append({
+                "object_name": r,
+                "year": int(t),
+                "y_true": float(yt),
+                "y_pred": float(yp),
+                "model": name,
+            })
     return pd.DataFrame(oof)
 
 
@@ -276,24 +342,16 @@ def run_all_models(df: pd.DataFrame,
                     features: list[str],
                     target_raw: str = TARGET_NOM,
                     test_years: tuple[int, ...] = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Запускает walk-forward для всех моделей.
-
-    Возвращает (oof, summary, per_year):
-      - oof       : long DF с прогнозами всех моделей;
-      - summary   : средние метрики на test-периоде по моделям;
-      - per_year  : метрики по годам для каждой модели.
-    """
+    """Запускает walk-forward для всех baseline и ML-моделей."""
     target_label = "nom" if target_raw == TARGET_NOM else "real"
     print(f"\n  Walk-forward CV для target = {target_raw} ({target_label})")
     all_oof = []
 
-    # Baselines
-    for bname in ["Naive", "MeanGrowth"]:
+    for bname in ["Naive", "CAGR", "MeanGrowth", "ARIMA"]:
         print(f"    {bname}...")
         oof_b = walk_forward_cv(df, features, target_raw, bname, test_years)
         all_oof.append(oof_b)
 
-    # ML модели
     for sp in make_specs():
         print(f"    {sp.name}...")
         try:
@@ -304,7 +362,6 @@ def run_all_models(df: pd.DataFrame,
 
     oof = pd.concat(all_oof, ignore_index=True)
 
-    # Метрики по моделям
     summary_rows = []
     per_year_rows = []
     for name, sub in oof.groupby("model", sort=False):
@@ -326,7 +383,7 @@ def run_all_models(df: pd.DataFrame,
 def train_final(df: pd.DataFrame, features: list[str], spec: ModelSpec,
                 target_raw: str = TARGET_NOM,
                 train_through: int = TEST_END) -> dict:
-    """Обучает финальную модель на полном наборе (включая тест) — для прогноза в будущее."""
+    """Обучает финальную ML-модель на полном наборе до train_through."""
     target_log = "nom_log" if target_raw == TARGET_NOM else "real_log"
     train = df[df["year"] <= train_through].dropna(subset=[target_log])
     X = train[features].values
